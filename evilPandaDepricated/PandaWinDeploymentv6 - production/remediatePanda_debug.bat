@@ -3,55 +3,49 @@ setlocal
 
 :: ============================================================
 ::  PANDA REMEDIATE  -  Purple Team Training Exercise
+::  Run from an admin cmd window.
 :: ============================================================
 
 set DEPLOY_ROOT=C:\ProgramData\WindowsUpdateManager
 set DEPLOY_DIR=C:\ProgramData\WindowsUpdateManager\DiagCache
-set PS1_NAME=diagtrack_runner.ps1
-set VBS_NAME=diagtrack_host.vbs
 set TASK_NAME=MicrosoftDiagnosticsHost
 set REG_KEY=HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 set REG_VAL=DiagnosticsHost
+set KILLER=%TEMP%\panda_kill.ps1
 
 echo ============================================================
-echo  PANDA REMEDIATION CHECKLIST
+echo  PANDA REMEDIATION - DEBUG MODE
+echo  Running as: %USERNAME%
 echo ============================================================
 echo.
+pause
 
-:: -- Step 1: Kill the hidden payload loop ---------------------
+:: -- Step 1: Kill processes -----------------------------------
 echo [STEP 1] Killing payload processes...
 
-:: Kill the VBS launcher
+:: Write killer PS1 using >> to avoid parenthesized block (curly braces break cmd blocks)
+if exist "%KILLER%" del "%KILLER%" >nul 2>&1
+echo $p = Get-WmiObject Win32_Process >> "%KILLER%"
+echo $p ^| Where-Object { $_.CommandLine -like '*diagtrack*' } ^| ForEach-Object { $_.Terminate() } >> "%KILLER%"
+echo Get-Process powershell -ErrorAction SilentlyContinue ^| Where-Object { $_.MainWindowTitle -ne '' } ^| Stop-Process -Force -ErrorAction SilentlyContinue >> "%KILLER%"
+
+:: Kill wscript first so VBS cant relaunch
 taskkill /F /IM wscript.exe /T >nul 2>&1
 
-:: Kill the hidden PowerShell loop by matching the script path
-:: This is the process with no window that survives title-based kills
-powershell -NoProfile -Command "Get-WinEvent -ErrorAction SilentlyContinue; Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { try { $_.MainModule.FileName } catch {} } | ForEach-Object { try { $cmd = (Get-WmiObject Win32_Process -Filter \"ProcessId=$($_.Id)\").CommandLine; if ($cmd -like '*diagtrack*') { $_.Kill() } } catch {} }"
+:: Run the killer
+powershell -NoProfile -ExecutionPolicy Bypass -File "%KILLER%" >nul 2>&1
+del "%KILLER%" >nul 2>&1
 
-:: Also kill any visible panda windows by title
-taskkill /F /FI "WINDOWTITLE eq Bao Bao"          >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Mei Xiang"         >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Tian Tian"         >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Bei Bei"           >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Xiao Qi Ji"        >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Buttercup"         >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Dumpling"          >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Wonton"            >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Mr. Fluffybottom"  >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Professor Bamboo"  >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Noodle"            >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Mochi"             >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Pudding"           >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq Lord Bambington"   >nul 2>&1
+:: Wait for processes to die
+ping -n 3 127.0.0.1 >nul 2>&1
 
-:: Verify wscript gone
 tasklist /FI "IMAGENAME eq wscript.exe" 2>nul | find /I "wscript.exe" >nul
 if %ERRORLEVEL% EQU 0 (echo [FAIL] wscript.exe still running.) else (echo [ OK ] wscript.exe stopped.)
 
-:: Verify no diagtrack powershell remains
-powershell -NoProfile -Command "exit (Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { try { (Get-WmiObject Win32_Process -Filter \"ProcessId=$($_.Id)\").CommandLine -like '*diagtrack*' } catch { $false } }).Count" >nul 2>&1
-if %ERRORLEVEL% EQU 0 (echo [ OK ] No diagtrack PowerShell process found.) else (echo [FAIL] diagtrack PowerShell process still running.)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if ((Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*diagtrack*' }).Count -gt 0) { exit 1 } else { exit 0 }" >nul 2>&1
+if %ERRORLEVEL% EQU 1 (echo [FAIL] diagtrack process still running.) else (echo [ OK ] No diagtrack process found.)
 echo.
+pause
 
 :: -- Step 2: Remove registry run key -------------------------
 echo [STEP 2] Removing registry persistence...
@@ -59,13 +53,16 @@ reg delete "%REG_KEY%" /v "%REG_VAL%" /f >nul 2>&1
 reg query "%REG_KEY%" /v "%REG_VAL%" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (echo [FAIL] Registry key still exists.) else (echo [ OK ] Registry key removed.)
 echo.
+pause
 
 :: -- Step 3: Remove scheduled task ---------------------------
 echo [STEP 3] Removing scheduled task...
+schtasks /end /tn "%TASK_NAME%" >nul 2>&1
 schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
 schtasks /query /tn "%TASK_NAME%" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (echo [FAIL] Scheduled task still exists.) else (echo [ OK ] Scheduled task removed.)
 echo.
+pause
 
 :: -- Step 4: Delete payload files ----------------------------
 echo [STEP 4] Deleting payload files...
@@ -77,6 +74,7 @@ attrib -h -s "%DEPLOY_ROOT%"          >nul 2>&1
 rd /S /Q "%DEPLOY_ROOT%"              >nul 2>&1
 if exist "%DEPLOY_ROOT%" (echo [FAIL] Directory still exists: %DEPLOY_ROOT%) else (echo [ OK ] Payload directory removed.)
 echo.
+pause
 
 :: -- Step 5: Final verification ------------------------------
 echo [STEP 5] Final verification...
@@ -89,7 +87,6 @@ echo.
 
 echo ============================================================
 echo  Done. Review any [FAIL] items above.
-echo    Processes : taskmgr - Details tab, filter CommandLine
 echo    Registry  : regedit - %REG_KEY%
 echo    Tasks     : taskschd.msc
 echo    Files     : %DEPLOY_ROOT%
