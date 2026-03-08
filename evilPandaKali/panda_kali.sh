@@ -85,7 +85,11 @@ DESKTOP
 
     echo ""
     echo "[6/6] Launching payload..."
-    nohup "$DEPLOYED" > /dev/null 2>&1 &
+    # Export display vars so the deployed copy can spawn terminal windows
+    export DISPLAY="${DISPLAY:-:0}"
+    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS}"
+    export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+    nohup env DISPLAY="$DISPLAY"               DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"               XAUTHORITY="$XAUTHORITY"               HOME="$HOME"               "$DEPLOYED" > /dev/null 2>&1 &
     echo "[ OK ] Launched (PID $!)."
     echo ""
     echo "Deployment complete. This script will now self-delete."
@@ -256,14 +260,16 @@ read -p "  [press enter to close]" 2>/dev/null || sleep infinity
 INNER
     chmod +x "$tmpscript"
 
-    if command -v gnome-terminal &>/dev/null; then
+    if command -v qterminal &>/dev/null; then
+        qterminal --title="$name" -e "bash $tmpscript" &
+    elif command -v gnome-terminal &>/dev/null; then
         gnome-terminal --title="$name" -- bash "$tmpscript" &
     elif command -v xfce4-terminal &>/dev/null; then
         xfce4-terminal --title="$name" -e "bash $tmpscript" &
-    elif command -v xterm &>/dev/null; then
-        xterm -title "$name" -e bash "$tmpscript" &
     elif command -v konsole &>/dev/null; then
         konsole --title "$name" -e bash "$tmpscript" &
+    elif command -v xterm &>/dev/null; then
+        xterm -title "$name" -e bash "$tmpscript" &
     else
         bash "$tmpscript"
     fi
