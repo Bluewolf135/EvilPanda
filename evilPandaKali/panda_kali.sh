@@ -256,12 +256,13 @@ echo ""
 echo "  did you know, ${name}?"
 echo "  ${fact}"
 
-read -p "  [press enter to close]" 2>/dev/null || sleep infinity
+sleep 12
+rm -f "$tmpscript"
 INNER
     chmod +x "$tmpscript"
 
     if command -v qterminal &>/dev/null; then
-        qterminal --title="$name" -e "bash $tmpscript" &
+        qterminal -e "bash $tmpscript" &
     elif command -v gnome-terminal &>/dev/null; then
         gnome-terminal --title="$name" -- bash "$tmpscript" &
     elif command -v xfce4-terminal &>/dev/null; then
